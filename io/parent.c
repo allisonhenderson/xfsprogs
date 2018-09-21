@@ -19,7 +19,8 @@ static int
 pptr_print(
 	struct xfs_pptr_info	*pi,
 	struct xfs_parent_ptr	*pptr,
-	void			*arg)
+	void			*arg,
+	int			flags)
 {
 	char			buf[XFS_PPTR_MAXNAMELEN + 1];
 
@@ -30,24 +31,38 @@ pptr_print(
 
 	memcpy(buf, pptr->xpp_name, pptr->xpp_namelen);
 	buf[pptr->xpp_namelen] = 0;
-	printf(_("p_ino    = %llu\n"), (unsigned long long)pptr->xpp_ino);
-	printf(_("p_gen    = %u\n"), (unsigned int)pptr->xpp_gen);
-	printf(_("p_reclen = %u\n"), (unsigned int)pptr->xpp_namelen);
-	printf(_("p_name   = \"%s\"\n\n"), buf);
+
+	if (flags & XFS_PPPTR_OFLAG_SHORT) {
+		printf("%llu/%u/%u/%s\n",
+			(unsigned long long)pptr->xpp_ino,
+			(unsigned int)pptr->xpp_gen,
+			(unsigned int)pptr->xpp_namelen,
+			buf);
+	}
+	else {
+		printf(_("p_ino    = %llu\n"), (unsigned long long)pptr->xpp_ino);
+		printf(_("p_gen    = %u\n"), (unsigned int)pptr->xpp_gen);
+		printf(_("p_reclen = %u\n"), (unsigned int)pptr->xpp_namelen);
+		printf(_("p_name   = \"%s\"\n\n"), buf);
+	}
 	return 0;
 }
 
 int
 print_parents(
-	struct xfs_handle	*handle)
+	struct xfs_handle	*handle,
+	uint64_t		pino,
+	char			*pname,
+	int			flags)
 {
 	int			ret;
 
 	if (handle)
-		ret = handle_walk_pptrs(handle, sizeof(*handle), pptr_print,
-				NULL);
+		ret = handle_walk_pptrs(handle, sizeof(*handle), pino,
+				pname, pptr_print, NULL, flags);
 	else
-		ret = fd_walk_pptrs(file->fd, pptr_print, NULL);
+		ret = fd_walk_pptrs(file->fd, pino, pname, pptr_print,
+				NULL, flags);
 	if (ret)
 		perror(file->name);
 
@@ -78,15 +93,19 @@ path_print(
 
 int
 print_paths(
-	struct xfs_handle	*handle)
+	struct xfs_handle	*handle,
+	uint64_t		pino,
+	char			*pname,
+	int			flags)
 {
 	int			ret;
 
 	if (handle)
-		ret = handle_walk_ppaths(handle, sizeof(*handle), path_print,
-				NULL);
+		ret = handle_walk_ppaths(handle, sizeof(*handle), pino,
+				pname, path_print, NULL, flags);
  	else
-		ret = fd_walk_ppaths(file->fd, path_print, NULL);
+		ret = fd_walk_ppaths(file->fd, pino, pname, path_print,
+				NULL, flags);
 	if (ret)
 		perror(file->name);
 	return 0;
@@ -108,6 +127,9 @@ parent_f(
 	int			listpath_flag = 0;
 	int			ret;
 	static int		tab_init;
+	uint64_t		pino = 0;
+	char			*pname = NULL;
+	int			ppptr_flags = 0;
 
 	if (!tab_init) {
 		tab_init = 1;
@@ -122,10 +144,26 @@ parent_f(
 	}
 	mntpt = fs->fs_dir;
 
-	while ((c = getopt(argc, argv, "p")) != EOF) {
+	while ((c = getopt(argc, argv, "pfi:n:")) != EOF) {
 		switch (c) {
 		case 'p':
 			listpath_flag = 1;
+			break;
+		case 'i':
+	                pino = strtoull(optarg, &p, 0);
+	                if (*p != '\0' || pino == 0) {
+	                        fprintf(stderr,
+	                                _("Bad inode number '%s'.\n"),
+	                                optarg);
+	                        return 0;
+			}
+
+			break;
+		case 'n':
+			pname = optarg;
+			break;
+		case 'f':
+			ppptr_flags |= XFS_PPPTR_OFLAG_SHORT;
 			break;
 		default:
 			return command_usage(&parent_cmd);
@@ -168,9 +206,11 @@ parent_f(
 	}
 
 	if (listpath_flag)
-		exitcode = print_paths(ino ? &handle : NULL);
+		exitcode = print_paths(ino ? &handle : NULL,
+				pino, pname, ppptr_flags);
 	else
-		exitcode = print_parents(ino ? &handle : NULL);
+		exitcode = print_parents(ino ? &handle : NULL,
+				pino, pname, ppptr_flags);
 
 	if (hanp)
 		free_handle(hanp, hlen);
@@ -188,6 +228,12 @@ printf(_(
 " -p -- list the current file's paths up to the root\n"
 "\n"
 "If ino and gen are supplied, use them instead.\n"
+"\n"
+" -i -- Only show parent pointer records containing the given inode\n"
+"\n"
+" -n -- Only show parent pointer records containing the given filename\n"
+"\n"
+" -f -- Print records in short format: ino/gen/namelen/filename\n"
 "\n"));
 }
 
@@ -198,7 +244,7 @@ parent_init(void)
 	parent_cmd.cfunc = parent_f;
 	parent_cmd.argmin = 0;
 	parent_cmd.argmax = -1;
-	parent_cmd.args = _("[-p] [ino gen]");
+	parent_cmd.args = _("[-p] [ino gen] [-i] [ino] [-n] [name] [-f]");
 	parent_cmd.flags = CMD_NOMAP_OK;
 	parent_cmd.oneline = _("print parent inodes");
 	parent_cmd.help = parent_help;
