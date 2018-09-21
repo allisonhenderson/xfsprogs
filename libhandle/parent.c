@@ -40,13 +40,21 @@ xfs_pptr_alloc(
       return pi;
 }
 
-/* Walk all parents of the given file handle. */
+/*
+ * Walk all parents of the given file handle.
+ * If pino is set, print only the parent pointer
+ * of that inode.  If pname is set, print only the
+ * parent pointer of that filename
+ */
 static int
 handle_walk_parents(
 	int			fd,
 	struct xfs_handle	*handle,
+	uint64_t		pino,
+	char			*pname,
 	walk_pptr_fn		fn,
-	void			*arg)
+	void			*arg,
+	int			flags)
 {
 	struct xfs_pptr_info	*pi;
 	struct xfs_parent_ptr	*p;
@@ -65,13 +73,20 @@ handle_walk_parents(
 	ret = ioctl(fd, XFS_IOC_GETPPOINTER, pi);
 	while (!ret) {
 		if (pi->pi_flags & XFS_PPTR_OFLAG_ROOT) {
-			ret = fn(pi, NULL, arg);
+			ret = fn(pi, NULL, arg, flags);
 			break;
 		}
 
 		for (i = 0; i < pi->pi_ptrs_used; i++) {
 			p = XFS_PPINFO_TO_PP(pi, i);
-			ret = fn(pi, p, arg);
+			if ((pino != 0) && (pino != p->xpp_ino))
+				continue;
+
+			if ((pname  != NULL) && (strcmp(pname,
+					(char *)p->xpp_name) != 0))
+				continue;
+
+			ret = fn(pi, p, arg, flags);
 			if (ret)
 				goto out_pi;
 		}
@@ -92,8 +107,11 @@ int
 handle_walk_pptrs(
 	void			*hanp,
 	size_t			hlen,
+	uint64_t		pino,
+	char			*pname,
 	walk_pptr_fn		fn,
-	void			*arg)
+	void			*arg,
+	int			flags)
 {
 	char			*mntpt;
 	int			fd;
@@ -107,17 +125,20 @@ handle_walk_pptrs(
 	if (fd < 0)
 		return -1;
 
-	return handle_walk_parents(fd, hanp, fn, arg);
+	return handle_walk_parents(fd, hanp, pino, pname, fn, arg, flags);
 }
 
 /* Walk all parent pointers of this fd. */
 int
 fd_walk_pptrs(
 	int			fd,
+	uint64_t		pino,
+	char			*pname,
 	walk_pptr_fn		fn,
-	void			*arg)
+	void			*arg,
+	int			flags)
 {
-	return handle_walk_parents(fd, NULL, fn, arg);
+	return handle_walk_parents(fd, NULL, pino, pname, fn, arg, flags);
 }
 
 struct walk_ppaths_info {
@@ -135,13 +156,15 @@ struct walk_ppath_level_info {
 };
 
 static int handle_walk_parent_paths(struct walk_ppaths_info *wpi,
-		struct xfs_handle *handle);
+		struct xfs_handle *handle, uint64_t pino, char *pname,
+		int flags);
 
 static int
 handle_walk_parent_path_ptr(
 	struct xfs_pptr_info		*pi,
 	struct xfs_parent_ptr		*p,
-	void				*arg)
+	void				*arg,
+	int				flags)
 {
 	struct walk_ppath_level_info	*wpli = arg;
 	struct walk_ppaths_info		*wpi = wpli->wpi;
@@ -160,7 +183,7 @@ handle_walk_parent_path_ptr(
 		wpli->newhandle.ha_fid.fid_ino = p->xpp_ino;
 		wpli->newhandle.ha_fid.fid_gen = p->xpp_gen;
 		path_list_add_parent_component(wpi->path, wpli->pc);
-		ret = handle_walk_parent_paths(wpi, &wpli->newhandle);
+		ret = handle_walk_parent_paths(wpi, &wpli->newhandle, 0, NULL, 0);
 		path_list_del_component(wpi->path, wpli->pc);
 		if (ret)
 			break;
@@ -176,7 +199,10 @@ handle_walk_parent_path_ptr(
 static int
 handle_walk_parent_paths(
 	struct walk_ppaths_info		*wpi,
-	struct xfs_handle		*handle)
+	struct xfs_handle		*handle,
+	uint64_t			pino,
+	char				*pname,
+	int				flags)
 {
 	struct walk_ppath_level_info	*wpli;
 	int				ret;
@@ -192,8 +218,8 @@ handle_walk_parent_paths(
 	wpli->wpi = wpi;
 	memcpy(&wpli->newhandle, handle, sizeof(struct xfs_handle));
 
-	ret = handle_walk_parents(wpi->fd, handle, handle_walk_parent_path_ptr,
-			wpli);
+	ret = handle_walk_parents(wpi->fd, handle, pino, pname,
+			handle_walk_parent_path_ptr, wpli, flags);
 
 	path_component_free(wpli->pc);
 	free(wpli);
@@ -208,8 +234,11 @@ int
 handle_walk_ppaths(
 	void			*hanp,
 	size_t			hlen,
+	uint64_t		pino,
+	char			*pname,
 	walk_ppath_fn		fn,
-	void			*arg)
+	void			*arg,
+	int			flags)
 {
 	struct walk_ppaths_info	wpi;
 	ssize_t			ret;
@@ -228,7 +257,7 @@ handle_walk_ppaths(
 	wpi.fn = fn;
 	wpi.arg = arg;
 
-	ret = handle_walk_parent_paths(&wpi, hanp);
+	ret = handle_walk_parent_paths(&wpi, hanp, pino, pname, flags);
 	path_list_free(wpi.path);
 
 	return ret;
@@ -241,8 +270,11 @@ handle_walk_ppaths(
 int
 fd_walk_ppaths(
 	int			fd,
+	uint64_t		pino,
+	char			*pname,
 	walk_ppath_fn		fn,
-	void			*arg)
+	void			*arg,
+	int			flags)
 {
 	struct walk_ppaths_info	wpi;
 	void			*hanp;
@@ -264,7 +296,7 @@ fd_walk_ppaths(
 	wpi.fn = fn;
 	wpi.arg = arg;
 
-	ret = handle_walk_parent_paths(&wpi, hanp);
+	ret = handle_walk_parent_paths(&wpi, hanp, pino, pname, flags);
 	path_list_free(wpi.path);
 
 	return ret;
@@ -310,7 +342,8 @@ handle_to_path(
 
 	pwi.buf = path;
 	pwi.len = pathlen;
-	return handle_walk_ppaths(hanp, hlen, handle_to_path_walk, &pwi);
+	return handle_walk_ppaths(hanp, hlen, 0, NULL, handle_to_path_walk,
+			&pwi, 0);
 }
 
 /* Return any eligible path to this file description. */
@@ -324,5 +357,5 @@ fd_to_path(
 
 	pwi.buf = path;
 	pwi.len = pathlen;
-	return fd_walk_ppaths(fd, handle_to_path_walk, &pwi);
+	return fd_walk_ppaths(fd, 0, NULL, handle_to_path_walk, &pwi, 0);
 }
