@@ -40,6 +40,8 @@ extern int  fssetdm_by_handle (void *__hanp, size_t __hlen,
 
 void fshandle_destroy(void);
 
+int handle_to_fsfd(void *hanp, char **path);
+
 #ifdef __cplusplus
 }
 #endif

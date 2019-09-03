@@ -58,4 +58,23 @@ typedef struct fs_cursor {
 extern void fs_cursor_initialise(char *__dir, uint __flags, fs_cursor_t *__cp);
 extern fs_path_t *fs_cursor_next_entry(fs_cursor_t *__cp);
 
-#endif	/* __LIBFROG_PATH_H__ */
+/* Path information. */
+
+struct path_list;
+struct path_component;
+
+struct path_component *path_component_init(const char *name);
+void path_component_free(struct path_component *pc);
+int path_component_change(struct path_component *pc, void *name,
+		size_t namelen);
+
+struct path_list *path_list_init(void);
+void path_list_free(struct path_list *path);
+void path_list_add_parent_component(struct path_list *path,
+		struct path_component *pc);
+void path_list_add_component(struct path_list *path, struct path_component *pc);
+void path_list_del_component(struct path_list *path, struct path_component *pc);
+
+ssize_t path_list_to_string(struct path_list *path, char *buf, size_t buflen);
+
+#endif	/* __PATH_H__ */
