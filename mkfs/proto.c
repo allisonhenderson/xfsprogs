@@ -328,7 +328,7 @@ newdirent(
 
 	rsv = XFS_DIRENTER_SPACE_RES(mp, name->len);
 
-	error = -libxfs_dir_createname(tp, pip, name, inum, rsv);
+	error = -libxfs_dir_createname(tp, pip, name, inum, rsv, NULL);
 	if (error)
 		fail(_("directory createname error"), error);
 }
