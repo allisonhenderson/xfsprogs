@@ -1125,7 +1125,7 @@ mv_orphanage(
 			if (entry_ino_num != orphanage_ino)  {
 				err = -libxfs_dir_replace(tp, ino_p,
 						&xfs_name_dotdot, orphanage_ino,
-						nres);
+						nres, NULL);
 				if (err)
 					do_error(
 	_("name replace op failed (%d)\n"), err);
