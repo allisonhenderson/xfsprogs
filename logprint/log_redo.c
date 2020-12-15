@@ -674,6 +674,31 @@ xfs_attri_copy_log_format(
 	return 1;
 }
 
+/* iovec length must be 32-bit aligned */
+static inline size_t ATTR_NVEC_SIZE(size_t size)
+{
+	return round_up(size, sizeof(int32_t));
+}
+
+static int
+xfs_attri_copy_name_format(
+	char                            *buf,
+	uint                            len,
+	struct xfs_parent_name_rec     *dst_attri_fmt)
+{
+	uint dst_len = ATTR_NVEC_SIZE(sizeof(struct xfs_parent_name_rec));
+
+	if (len == dst_len) {
+		memcpy((char *)dst_attri_fmt, buf, len);
+		return 0;
+	}
+
+	fprintf(stderr, _("%s: bad size of attri name format: %u; expected %u\n"),
+		progname, len, dst_len);
+
+	return 1;
+}
+
 int
 xlog_print_trans_attri(
 	char				**ptr,
@@ -714,7 +739,8 @@ xlog_print_trans_attri(
 		(*i)++;
 		head = (xlog_op_header_t *)*ptr;
 		xlog_print_op_header(head, *i, ptr);
-		error = xlog_print_trans_attri_name(ptr, be32_to_cpu(head->oh_len));
+		error = xlog_print_trans_attri_name(ptr, be32_to_cpu(head->oh_len),
+						    src_f->alfi_attr_filter);
 		if (error)
 			goto error;
 	}
@@ -724,7 +750,8 @@ xlog_print_trans_attri(
 		(*i)++;
 		head = (xlog_op_header_t *)*ptr;
 		xlog_print_op_header(head, *i, ptr);
-		error = xlog_print_trans_attri_name(ptr, be32_to_cpu(head->oh_len));
+		error = xlog_print_trans_attri_name(ptr, be32_to_cpu(head->oh_len),
+						    src_f->alfi_attr_filter);
 		if (error)
 			goto error;
 	}
@@ -735,7 +762,7 @@ xlog_print_trans_attri(
 		head = (xlog_op_header_t *)*ptr;
 		xlog_print_op_header(head, *i, ptr);
 		error = xlog_print_trans_attri_value(ptr, be32_to_cpu(head->oh_len),
-				src_f->alfi_value_len);
+				src_f->alfi_value_len, src_f->alfi_attr_filter);
 	}
 error:
 	free(src_f);
@@ -746,13 +773,45 @@ error:
 int
 xlog_print_trans_attri_name(
 	char				**ptr,
-	uint				src_len)
+	uint				src_len,
+	uint				attr_flags)
 {
-	printf(_("ATTRI:  name len:%u\n"), src_len);
-	print_or_dump(*ptr, src_len);
+	struct xfs_parent_name_rec	*src_f = NULL;
+	uint				dst_len;
 
+	/*
+	 * If this is not a parent pointer, just do a bin dump
+	 */
+	if (!(attr_flags & XFS_ATTR_PARENT)) {
+		printf(_("ATTRI:  name len:%u\n"), src_len);
+		print_or_dump(*ptr, src_len);
+		goto out;
+	}
+
+	dst_len	= ATTR_NVEC_SIZE(sizeof(struct xfs_parent_name_rec));
+	if (dst_len != src_len) {
+		fprintf(stderr, _("%s: bad size of attri name format: %u; expected %u\n"),
+			progname, src_len, dst_len);
+		return 1;
+	}
+
+	/*
+	 * memmove to ensure 8-byte alignment for the long longs in
+	 * xfs_parent_name_rec structure
+	 */
+	if ((src_f = (struct xfs_parent_name_rec *)malloc(src_len)) == NULL) {
+		fprintf(stderr, _("%s: xlog_print_trans_attri_name: malloc failed\n"), progname);
+		exit(1);
+	}
+	memmove((char*)src_f, *ptr, src_len);
+
+	printf(_("ATTRI:  #p_ino: %llu	p_gen: %u, p_diroffset: %u\n"),
+		be64_to_cpu(src_f->p_ino), be32_to_cpu(src_f->p_gen),
+				be32_to_cpu(src_f->p_diroffset));
+
+	free(src_f);
+out:
 	*ptr += src_len;
-
 	return 0;
 }	/* xlog_print_trans_attri */
 
@@ -760,15 +819,32 @@ int
 xlog_print_trans_attri_value(
 	char				**ptr,
 	uint				src_len,
-	int				value_len)
+	int				value_len,
+	uint				attr_flags)
 {
 	int len = min(value_len, src_len);
+	char				*f = NULL;
 
-	printf(_("ATTRI:  value len:%u\n"), value_len);
-	print_or_dump(*ptr, len);
+	/*
+	 * If this is not a parent pointer, just do a bin dump
+	 */
+	if (!(attr_flags & XFS_ATTR_PARENT)) {
+		printf(_("ATTRI:  value len:%u\n"), value_len);
+		print_or_dump(*ptr, min(len, MAX_ATTR_VAL_PRINT));
+		goto out;
+	}
 
+	if ((f = (char *)malloc(src_len)) == NULL) {
+		fprintf(stderr, _("%s: xlog_print_trans_attri: malloc failed\n"), progname);
+		exit(1);
+	}
+
+	memcpy(f, *ptr, value_len);
+	printf(_("ATTRI:  value: %.*s\n"), value_len, f);
+
+	free(f);
+out:
 	*ptr += src_len;
-
 	return 0;
 }	/* xlog_print_trans_attri_value */
 
@@ -778,6 +854,9 @@ xlog_recover_print_attri(
 {
 	struct xfs_attri_log_format	*f, *src_f = NULL;
 	uint				src_len, dst_len;
+
+	struct xfs_parent_name_rec 	*rec, *src_rec = NULL;
+	char				*value, *src_value = NULL;
 
 	int				region = 0;
 
@@ -803,27 +882,93 @@ xlog_recover_print_attri(
 
 	if (f->alfi_name_len > 0) {
 		region++;
-		printf(_("ATTRI:  name len:%u\n"), f->alfi_name_len);
-		print_or_dump((char *)item->ri_buf[region].i_addr,
-			       f->alfi_name_len);
+
+		if (f->alfi_attr_filter & XFS_ATTR_PARENT) {
+			src_rec = (struct xfs_parent_name_rec *)item->ri_buf[region].i_addr;
+			src_len = item->ri_buf[region].i_len;
+
+			dst_len = ATTR_NVEC_SIZE(sizeof(struct xfs_parent_name_rec));
+
+			if ((rec = ((struct xfs_parent_name_rec *)malloc(dst_len))) == NULL) {
+				fprintf(stderr, _("%s: xlog_recover_print_attri: malloc failed\n"),
+					progname);
+				exit(1);
+			}
+			if (xfs_attri_copy_name_format((char *)src_rec, src_len, rec)) {
+				goto out;
+			}
+
+			printf(_("ATTRI:  #inode: %llu     gen: %u, offset: %u\n"),
+				be64_to_cpu(rec->p_ino), be32_to_cpu(rec->p_gen),
+				be32_to_cpu(rec->p_diroffset));
+
+			free(rec);
+		}
+		else {
+			printf(_("ATTRI:  name len:%u\n"), f->alfi_name_len);
+			print_or_dump((char *)item->ri_buf[region].i_addr,
+					f->alfi_name_len);
+		}
 	}
 
 	if (f->alfi_nname_len > 0) {
 		region++;
-		printf(_("ATTRI:  nname len:%u\n"), f->alfi_nname_len);
-		print_or_dump((char *)item->ri_buf[region].i_addr,
-			       f->alfi_nname_len);
+
+		if (f->alfi_attr_filter & XFS_ATTR_PARENT) {
+			src_rec = (struct xfs_parent_name_rec *)item->ri_buf[region].i_addr;
+			src_len = item->ri_buf[region].i_len;
+
+			dst_len = ATTR_NVEC_SIZE(sizeof(struct xfs_parent_name_rec));
+
+			if ((rec = ((struct xfs_parent_name_rec *)malloc(dst_len))) == NULL) {
+				fprintf(stderr, _("%s: xlog_recover_print_attri: malloc failed\n"),
+					progname);
+				exit(1);
+			}
+			if (xfs_attri_copy_name_format((char *)src_rec, src_len, rec)) {
+				goto out;
+			}
+
+			printf(_("ATTRI:  new #inode: %llu     gen: %u, offset: %u\n"),
+				be64_to_cpu(rec->p_ino), be32_to_cpu(rec->p_gen),
+				be32_to_cpu(rec->p_diroffset));
+
+			free(rec);
+		}
+		else {
+			printf(_("ATTRI:  nname len:%u\n"), f->alfi_nname_len);
+			print_or_dump((char *)item->ri_buf[region].i_addr,
+				       f->alfi_nname_len);
+		}
 	}
 
 	if (f->alfi_value_len > 0) {
-		int len = f->alfi_value_len;
-
-		if (len > MAX_ATTR_VAL_PRINT)
-			len = MAX_ATTR_VAL_PRINT;
-
 		region++;
-		printf(_("ATTRI:  value len:%u\n"), f->alfi_value_len);
-		print_or_dump((char *)item->ri_buf[region].i_addr, len);
+
+		if (f->alfi_attr_filter & XFS_ATTR_PARENT) {
+			src_value = (char *)item->ri_buf[region].i_addr;
+
+			if ((value = ((char *)malloc(f->alfi_value_len))) == NULL) {
+				fprintf(stderr, _("%s: xlog_recover_print_attri: malloc failed\n"),
+					progname);
+				exit(1);
+			}
+
+			memcpy((char *)value, (char *)src_value, f->alfi_value_len);
+			printf("ATTRI:  value: %.*s\n", f->alfi_value_len, value);
+
+			free(value);
+		}
+		else {
+			int len = f->alfi_value_len;
+
+			if (len > MAX_ATTR_VAL_PRINT)
+				len = MAX_ATTR_VAL_PRINT;
+
+			printf(_("ATTRI:  value len:%u\n"), f->alfi_value_len);
+			print_or_dump((char *)item->ri_buf[region].i_addr,
+					len);
+		}
 	}
 
 out:
