@@ -459,7 +459,7 @@ process_leaf_attr_local(
 	int				flags;
 
 	local = xfs_attr3_leaf_name_local(leaf, i);
-	flags = xfs_attr3_leaf_read(leaf, i);
+	flags = xfs_attr3_leaf_flags(leaf, i);
 	if (local->namelen == 0 ||
 	    !libxfs_attr_namecheck(mp, local->nameval,
 				   local->namelen, flags)) {
@@ -516,7 +516,7 @@ process_leaf_attr_remote(
 	int			flags;
 
 	remotep = xfs_attr3_leaf_name_remote(leaf, i);
-	flags = xfs_attr3_leaf_read(leaf, i);
+	flags = xfs_attr3_leaf_flags(leaf, i);
 
 	if (remotep->namelen == 0 ||
 	    !libxfs_attr_namecheck(mp, remotep->name,

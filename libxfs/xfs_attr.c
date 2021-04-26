@@ -376,12 +376,25 @@ xfs_attr_set_iter(
 	struct xfs_da_args              *args = attr->xattri_da_args;
 	struct xfs_inode		*dp = args->dp;
 	struct xfs_buf			*bp = NULL;
-	int				forkoff, error = 0;
+	int				sf_size, forkoff, error = 0;
 	struct xfs_mount		*mp = args->dp->i_mount;
 
 	/* State machine switch */
 	switch (attr->xattri_dela_state) {
 	case XFS_DAS_UNINIT:
+		/*
+		 * New inodes may not have an attribute fork yet. So set the
+		 * attribute fork appropriately
+		 */
+		if (XFS_IFORK_Q((args->dp)) == 0) {
+			sf_size = sizeof(struct xfs_attr_sf_hdr) +
+				  xfs_attr_sf_entsize_byname(args->namelen,
+							     args->valuelen);
+			xfs_bmap_set_attrforkoff(args->dp, sf_size, NULL);
+			args->dp->i_afp = kmem_cache_zalloc(xfs_ifork_cache, 0);
+			args->dp->i_afp->if_format = XFS_DINODE_FMT_EXTENTS;
+		}
+
 		/*
 		 * If the fork is shortform, attempt to add the attr. If there
 		 * is no space, this converts to leaf format and returns
