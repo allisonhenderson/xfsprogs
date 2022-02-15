@@ -388,6 +388,11 @@ xfs_sb_has_incompat_feature(
 	return (sbp->sb_features_incompat & feature) != 0;
 }
 
+static inline bool xfs_sb_version_hasparent(struct xfs_sb *sbp)
+{
+	return false; /* We'll enable this at the end of the set */
+}
+
 #define XFS_SB_FEAT_INCOMPAT_LOG_XATTRS   (1 << 0)	/* Delayed Attributes */
 #define XFS_SB_FEAT_INCOMPAT_LOG_ALL \
 	(XFS_SB_FEAT_INCOMPAT_LOG_XATTRS)
