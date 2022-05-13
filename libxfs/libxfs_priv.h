@@ -601,9 +601,13 @@ typedef int (*xfs_rtalloc_query_range_fn)(
 int libxfs_zero_extent(struct xfs_inode *ip, xfs_fsblock_t start_fsb,
                         xfs_off_t count_fsb);
 
+/* xfs_log.c */
+struct xlog;
 
 bool xfs_log_check_lsn(struct xfs_mount *, xfs_lsn_t);
 void xfs_log_item_init(struct xfs_mount *, struct xfs_log_item *, int);
+int xfs_attr_use_log_assist(struct xfs_mount *mp);
+void xlog_drop_incompat_feat(struct xlog *log);
 #define xfs_log_in_recovery(mp)	(false)
 
 /* xfs_icache.c */
