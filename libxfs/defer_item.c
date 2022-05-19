@@ -173,6 +173,11 @@ xfs_attr_finish_item(
 	 */
 	args->trans = tp;
 
+	if (XFS_TEST_ERROR(false, args->dp->i_mount, XFS_ERRTAG_LARP)) {
+		error = -EIO;
+		goto out;
+	}
+
 	switch (op) {
 	case XFS_ATTR_OP_FLAGS_SET:
 		error = xfs_attr_set_iter(dac);
@@ -185,7 +190,7 @@ xfs_attr_finish_item(
 		error = -EFSCORRUPTED;
 		break;
 	}
-
+out:
 	if (error != -EAGAIN)
 		kmem_free(attr);
 
