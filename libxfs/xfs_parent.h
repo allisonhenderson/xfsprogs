@@ -29,6 +29,9 @@ int xfs_parent_init(xfs_mount_t *mp, xfs_inode_t *ip,
 int xfs_parent_defer_add(struct xfs_trans *tp, struct xfs_inode *ip,
 			 struct xfs_parent_defer *parent,
 			 xfs_dir2_dataptr_t diroffset);
+int xfs_parent_defer_remove(struct xfs_trans *tp, struct xfs_inode *ip,
+			    struct xfs_parent_defer *parent,
+			    xfs_dir2_dataptr_t diroffset);
 void xfs_parent_cancel(xfs_mount_t *mp, struct xfs_parent_defer *parent);
 
 #endif	/* __XFS_PARENT_H__ */
