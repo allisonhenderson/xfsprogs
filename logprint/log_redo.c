@@ -705,11 +705,21 @@ xlog_print_trans_attri(
 	memmove((char*)src_f, *ptr, src_len);
 	*ptr += src_len;
 
-	printf(_("ATTRI:  #regs: %d	name_len: %d, value_len: %d  id: 0x%llx\n"),
-		src_f->alfi_size, src_f->alfi_name_len, src_f->alfi_value_len,
-				(unsigned long long)src_f->alfi_id);
+	printf(_("ATTRI:  #regs: %d	name_len: %d, nname_len: %d value_len: %d  id: 0x%llx\n"),
+		src_f->alfi_size, src_f->alfi_name_len, src_f->alfi_nname_len,
+		src_f->alfi_value_len, (unsigned long long)src_f->alfi_id);
 
 	if (src_f->alfi_name_len > 0) {
+		printf(_("\n"));
+		(*i)++;
+		head = (xlog_op_header_t *)*ptr;
+		xlog_print_op_header(head, *i, ptr);
+		error = xlog_print_trans_attri_name(ptr, be32_to_cpu(head->oh_len));
+		if (error)
+			goto error;
+	}
+
+	if (src_f->alfi_nname_len > 0) {
 		printf(_("\n"));
 		(*i)++;
 		head = (xlog_op_header_t *)*ptr;
@@ -788,14 +798,21 @@ xlog_recover_print_attri(
 	if (xfs_attri_copy_log_format((char*)src_f, src_len, f))
 		goto out;
 
-	printf(_("ATTRI:  #regs: %d	name_len: %d, value_len: %d  id: 0x%llx\n"),
-		f->alfi_size, f->alfi_name_len, f->alfi_value_len, (unsigned long long)f->alfi_id);
+	printf(_("ATTRI:  #regs: %d	name_len: %d, nname_len:%d, value_len: %d  id: 0x%llx\n"),
+		f->alfi_size, f->alfi_name_len, f->alfi_nname_len, f->alfi_value_len, (unsigned long long)f->alfi_id);
 
 	if (f->alfi_name_len > 0) {
 		region++;
 		printf(_("ATTRI:  name len:%u\n"), f->alfi_name_len);
 		print_or_dump((char *)item->ri_buf[region].i_addr,
 			       f->alfi_name_len);
+	}
+
+	if (f->alfi_nname_len > 0) {
+		region++;
+		printf(_("ATTRI:  nname len:%u\n"), f->alfi_nname_len);
+		print_or_dump((char *)item->ri_buf[region].i_addr,
+			       f->alfi_nname_len);
 	}
 
 	if (f->alfi_value_len > 0) {
