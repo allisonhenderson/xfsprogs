@@ -58,6 +58,13 @@ typedef struct xfs_qoff_logitem {
 	xfs_qoff_logformat_t	qql_format;	/* logged structure */
 } xfs_qoff_logitem_t;
 
+struct xfs_attri_log_item {
+	struct xfs_log_item		attri_item;
+	atomic_t			attri_refcount;
+	struct xfs_attri_log_nameval	*attri_nameval;
+	struct xfs_attri_log_format	attri_format;
+} xfs_attri_log_item_t;
+
 typedef struct xfs_trans {
 	unsigned int		t_log_res;	/* amt of log space resvd */
 	unsigned int		t_log_count;	/* count for perm log res */
