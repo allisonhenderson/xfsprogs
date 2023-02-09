@@ -321,6 +321,61 @@ They are all subject to change and should not be called directly
 by applications.
 XFS_IOC_FSSETDM_BY_HANDLE is not supported as of Linux 5.5.
 
+.PP
+.TP
+.B XFS_IOC_GETPARENTS
+This command is used to get a files parent pointers.  Parent pointers are
+file attributes used to store meta data information about an inodes parent.
+This command takes a xfs_pptr_info structure with trailing array of
+struct xfs_parent_ptr as an input to store an inodes parents. The
+xfs_pptr_info_sizeof() and xfs_ppinfo_to_pp() routines are provided to
+create and iterate through these structures.  The number of pointers stored
+in the array is indicated by the xfs_pptr_info.used field, and the
+XFS_PPTR_OFLAG_DONE flag will be set in xfs_pptr_info.flags when there are
+no more parent pointers to be read.  The below code is an example
+of XFS_IOC_GETPARENTS usage:
+
+.nf
+#include<stdio.h>
+#include<string.h>
+#include<errno.h>
+#include<xfs/linux.h>
+#include<xfs/xfs.h>
+#include<xfs/xfs_types.h>
+#include<xfs/xfs_fs.h>
+
+int main() {
+	struct xfs_pptr_info	*pi;
+	struct xfs_parent_ptr	*p;
+	int			i, error, fd, nr_ptrs = 4;
+
+	unsigned char buffer[xfs_pptr_info_sizeof(nr_ptrs)];
+	memset(buffer, 0, sizeof(buffer));
+	pi = (struct xfs_pptr_info *)&buffer;
+	pi->pi_ptrs_size = nr_ptrs;
+
+	fd = open("/mnt/test/foo.txt", O_RDONLY | O_CREAT);
+	if (fd  == -1)
+		return errno;
+
+	do {
+		error = ioctl(fd, XFS_IOC_GETPARENTS, pi);
+		if (error)
+			return error;
+
+		for (i = 0; i < pi->pi_ptrs_used; i++) {
+			p = xfs_ppinfo_to_pp(pi, i);
+			printf("inode		= %llu\\n", (unsigned long long)p->xpp_ino);
+			printf("generation	= %u\\n", (unsigned int)p->xpp_gen);
+			printf("diroffset	= %u\\n", (unsigned int)p->xpp_diroffset);
+			printf("name		= \\"%s\\"\\n\\n", (char *)p->xpp_name);
+		}
+	} while (!pi->pi_flags & XFS_PPTR_OFLAG_DONE);
+
+	return 0;
+}
+.fi
+
 .SS Filesystem Operations
 In order to effect one of the following operations, the pathname
 and descriptor arguments passed to
