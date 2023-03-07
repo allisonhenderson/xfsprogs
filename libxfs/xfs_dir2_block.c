@@ -746,6 +746,8 @@ xfs_dir2_block_lookup_int(
 		cmp = xfs_dir2_compname(args, dep->name, dep->namelen);
 		if (cmp != XFS_CMP_DIFFERENT && cmp != args->cmpresult) {
 			args->cmpresult = cmp;
+			args->offset = xfs_dir2_byte_to_dataptr(
+					(char *)dep - (char *)hdr);
 			*bpp = bp;
 			*entno = mid;
 			if (cmp == XFS_CMP_EXACT)

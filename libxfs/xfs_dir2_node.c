@@ -884,6 +884,8 @@ xfs_dir2_leafn_lookup_for_entry(
 			args->cmpresult = cmp;
 			args->inumber = be64_to_cpu(dep->inumber);
 			args->filetype = xfs_dir2_data_get_ftype(mp, dep);
+			args->offset = xfs_dir2_db_off_to_dataptr(args->geo,
++					newdb, (char *)dep - (char *)curbp->b_addr);
 			*indexp = index;
 			state->extravalid = 1;
 			state->extrablk.bp = curbp;
