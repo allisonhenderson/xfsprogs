@@ -8,6 +8,13 @@
 
 extern struct kmem_cache       *xfs_parent_intent_cache;
 
+/* Metadata validators */
+bool xfs_parent_namecheck(struct xfs_mount *mp,
+		const struct xfs_parent_name_rec *rec, size_t reclen,
+		unsigned int attr_flags);
+bool xfs_parent_valuecheck(struct xfs_mount *mp, const void *value,
+		size_t valuelen);
+
 /*
  * Incore version of a parent pointer, also contains dirent name so callers
  * can pass/obtain all the parent pointer information in a single structure
