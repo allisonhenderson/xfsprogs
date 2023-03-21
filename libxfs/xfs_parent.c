@@ -59,6 +59,36 @@ xfs_init_parent_name_rec(
 	rec->p_diroffset = cpu_to_be32(p_diroffset);
 }
 
+/*
+ * Convert an ondisk parent_name xattr to its incore format.  If @value is
+ * NULL, set @irec->p_namelen to zero and leave @irec->p_name untouched.
+ */
+void
+xfs_parent_irec_from_disk(
+	struct xfs_parent_name_irec	*irec,
+	const struct xfs_parent_name_rec *rec,
+	const void			*value,
+	int				valuelen)
+{
+	irec->p_ino = be64_to_cpu(rec->p_ino);
+	irec->p_gen = be32_to_cpu(rec->p_gen);
+	irec->p_diroffset = be32_to_cpu(rec->p_diroffset);
+
+	if (!value) {
+		irec->p_namelen = 0;
+		return;
+	}
+
+	ASSERT(valuelen > 0);
+	ASSERT(valuelen < MAXNAMELEN);
+
+	valuelen = min(valuelen, MAXNAMELEN);
+
+	irec->p_namelen = valuelen;
+	memcpy(irec->p_name, value, valuelen);
+	memset(&irec->p_name[valuelen], 0, sizeof(irec->p_name) - valuelen);
+}
+
 int
 __xfs_parent_init(
 	struct xfs_mount		*mp,
