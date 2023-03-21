@@ -826,16 +826,4 @@ struct xfs_parent_name_rec {
 	__be32  p_diroffset;
 };
 
-/*
- * incore version of the above, also contains name pointers so callers
- * can pass/obtain all the parent pointer information in a single structure
- */
-struct xfs_parent_name_irec {
-	xfs_ino_t		p_ino;
-	uint32_t		p_gen;
-	xfs_dir2_dataptr_t	p_diroffset;
-	const char		*p_name;
-	uint8_t			p_namelen;
-};
-
 #endif /* __XFS_DA_FORMAT_H__ */
