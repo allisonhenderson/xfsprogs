@@ -1298,6 +1298,8 @@ xfs_dir2_leaf_lookup_int(
 		cmp = xfs_dir2_compname(args, dep->name, dep->namelen);
 		if (cmp != XFS_CMP_DIFFERENT && cmp != args->cmpresult) {
 			args->cmpresult = cmp;
+			args->offset = xfs_dir2_db_off_to_dataptr(args->geo,
+					newdb, (char *)dep - (char *)dbp->b_addr);
 			*indexp = index;
 			/* case exact match: return the current buffer. */
 			if (cmp == XFS_CMP_EXACT) {
